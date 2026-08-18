@@ -445,3 +445,56 @@ The README will document:
 - Webhook/push notifications
 - Multi-org support
 - UI of any kind
+
+---
+
+# Addendum — 2026-08-18: full ticket context (TSK-19950)
+
+The V1 read path could not actually read a ticket. `get_thread` pulled from
+`GET /tickets/{id}/threads`, which returns metadata and a truncated `summary` but
+no body, and exposes the sender under `author`, not `from`. Every email therefore
+came back with `content: ""` and `fromName: "Unknown"`.
+
+## What the live API actually returns
+
+Probed against ticket 1083 (`82724000007120001`):
+
+| Endpoint | Carries |
+|---|---|
+| `GET /tickets/{id}/threads` | metadata, `summary` (truncated), `author`, `hasAttach`, `attachmentCount` — **no `content`** |
+| `GET /tickets/{id}/threads/{threadId}` | `content` (HTML), `attachments[]`, `to`, `cc`, `isContentTruncated`, `fullContentURL` |
+| `GET /tickets/{id}/comments` | `content`, `commenter`, **`commentedTime`** (not `createdTime`), `attachments[]` |
+| `GET /tickets/{id}` | `description` is **`null`** on email tickets — the opening message is the first thread |
+| `GET /tickets/{id}/attachments` | **empty** — attachments hang off threads, not the ticket |
+| `.../threads/{tid}/attachments/{aid}/content` | raw bytes; `Content-Type` is `text/html` regardless of the real type |
+
+## Consequences for the design
+
+- Reading a thread is inherently N+1: one list call plus one detail call per
+  thread. Bounded to 5 concurrent detail calls in `mapWithConcurrency`.
+- Zoho creates **one thread per recipient address**. Ticket 1083 reports six
+  threads but holds four distinct emails, because the mail went to both
+  `support@simplylearn.com` and `support@simplylearn.no`.
+- Each mail body embeds the entire prior conversation. Stripping at the quote
+  boundary (`<blockquote>`, or `<hr>` followed by a `<b>Fra:</b>`/`<b>From:</b>`
+  header block) cut ticket 1083 from 8 569 to 3 309 characters.
+- Because the ticket `description` is empty and attachments are per-thread, no
+  single V1 tool could answer "what is this ticket about". Hence
+  `get_ticket_context`.
+
+## Tools added
+
+- **`get_ticket_context(ticketId, includeQuoted?)`** — ticket metadata + all
+  entries (chronological, deduped, quote-stripped) + a flat attachment index.
+  The default entry point for understanding a ticket.
+- **`get_attachment(ticketId, threadId, attachmentId, fileName?)`** — decodes
+  text formats; `.eml` is parsed to headers + best-available body via
+  `src/eml.ts` (no new dependency). Binary types are refused by extension, since
+  the served `Content-Type` cannot be trusted.
+
+## Deliberately not done
+
+- Swapping to Zoho's official MCP server (`zoho.com/mcp`). Ours hardcodes
+  `isPublic: false` on internal notes and keeps replies as drafts; replacing it
+  is a separate decision, not part of this fix.
+- Threading/conversation reconstruction beyond chronological order.
