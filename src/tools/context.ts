@@ -27,6 +27,8 @@ export async function getTicketContext(ticketId: string, options: { includeQuote
     notes: {
       duplicatesCollapsed: thread.duplicatesCollapsed,
       quotedRepliesTrimmed: thread.quotedRepliesTrimmed,
+      complete: thread.complete,
+      truncatedByZoho: thread.entries.filter((e) => e.contentTruncatedByZoho).map((e) => e.id),
       attachmentHint: attachments.length
         ? "Use get_attachment with ticketId + threadId + attachmentId + fileName to read an attachment."
         : null,

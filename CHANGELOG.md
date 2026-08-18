@@ -26,6 +26,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
   longer silently truncated.
 - Unit tests (`npm test`) for the quote stripper, the ticket-ID parser and the
   `.eml` parser.
+- `complete` on the thread result and `contentTruncatedByZoho` / `fullContentUrl` per
+  entry, so a partial conversation is never passed off as the whole one. Zoho signals
+  its own body truncation via `isContentTruncated`; that signal was previously ignored.
+- `CLAUDE.md` documenting the build/restart cycle, the API gotchas and the five
+  invariants (chiefly: internal notes stay internal, replies stay drafts).
 
 ### Fixed
 

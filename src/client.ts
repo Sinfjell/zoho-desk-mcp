@@ -85,24 +85,26 @@ export async function getRaw(path: string): Promise<{ text: string; contentType:
 
 /**
  * Fetch every page of a list endpoint. Zoho caps `limit` at 99 and silently
- * truncates otherwise, so long tickets need the loop.
+ * truncates otherwise, so long tickets need the loop. `complete` reports whether
+ * the page cap was hit — callers must surface that rather than pass off a
+ * partial list as the whole conversation.
  */
 export async function getAll<T>(
   path: string,
   params: Record<string, string | number | undefined> = {},
-  maxPages = 20
-): Promise<T[]> {
+  maxPages = 100
+): Promise<{ items: T[]; complete: boolean }> {
   const limit = 99;
-  const out: T[] = [];
+  const items: T[] = [];
 
   for (let page = 0; page < maxPages; page++) {
     const res = await get<{ data?: T[] }>(path, { ...params, from: page * limit + 1, limit });
     const batch = res.data ?? [];
-    out.push(...batch);
-    if (batch.length < limit) break;
+    items.push(...batch);
+    if (batch.length < limit) return { items, complete: true };
   }
 
-  return out;
+  return { items, complete: false };
 }
 
 export async function post<T>(path: string, body: unknown): Promise<T> {

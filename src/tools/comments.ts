@@ -54,6 +54,9 @@ export interface ThreadEntry {
   attachments: { id: string; name: string; size: string | null }[];
   createdTime: string;
   duplicateIds?: string[];
+  /** Zoho itself truncated this body; `fullContentUrl` holds the rest. */
+  contentTruncatedByZoho?: boolean;
+  fullContentUrl?: string;
 }
 
 function mapAttachments(attachments?: ZohoAttachment[]) {
@@ -73,6 +76,9 @@ function toEntry(detail: ZohoThreadDetail, includeQuoted: boolean): ThreadEntry 
   return {
     id: detail.id,
     type: "emailThread",
+    ...(detail.isContentTruncated
+      ? { contentTruncatedByZoho: true, fullContentUrl: detail.fullContentURL ?? undefined }
+      : {}),
     direction: detail.direction ?? null,
     isPublic: detail.visibility ? detail.visibility === "public" : detail.isPublic ?? true,
     fromName: detail.author?.name ?? "Unknown",
@@ -126,18 +132,18 @@ function dedupeThreads(entries: ThreadEntry[]): ThreadEntry[] {
 export async function getThread(ticketId: string, options: { includeQuoted?: boolean } = {}) {
   const id = parseTicketId(ticketId);
 
-  const [summaries, comments] = await Promise.all([
+  const [threadPage, commentPage] = await Promise.all([
     getAll<ZohoThreadSummary>(`/tickets/${id}/threads`),
     getAll<ZohoComment>(`/tickets/${id}/comments`),
   ]);
 
   // The list endpoint carries no body — only the per-thread detail endpoint does.
-  const details = await mapWithConcurrency(summaries, DETAIL_CONCURRENCY, (t) =>
+  const details = await mapWithConcurrency(threadPage.items, DETAIL_CONCURRENCY, (t) =>
     get<ZohoThreadDetail>(`/tickets/${id}/threads/${t.id}`)
   );
 
   const threads = dedupeThreads(details.map((d) => toEntry(d, options.includeQuoted ?? false)));
-  const entries = [...threads, ...comments.map(commentToEntry)].sort(
+  const entries = [...threads, ...commentPage.items.map(commentToEntry)].sort(
     (a, b) => new Date(a.createdTime).getTime() - new Date(b.createdTime).getTime()
   );
 
@@ -146,6 +152,7 @@ export async function getThread(ticketId: string, options: { includeQuoted?: boo
     entries,
     duplicatesCollapsed: details.length - threads.length,
     quotedRepliesTrimmed: !options.includeQuoted,
+    complete: threadPage.complete && commentPage.complete,
   };
 }
 
