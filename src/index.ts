@@ -9,6 +9,8 @@ import {
 import { getTicket, listMyTickets, searchTickets } from "./tools/tickets.js";
 import { getContact } from "./tools/contacts.js";
 import { getThread, createInternalNote, createDraftReply } from "./tools/comments.js";
+import { getTicketContext } from "./tools/context.js";
+import { getAttachment } from "./tools/attachments.js";
 import { updateTicketStatus } from "./tools/status.js";
 
 const server = new Server(
@@ -19,8 +21,24 @@ const server = new Server(
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
+      name: "get_ticket_context",
+      description:
+        "Everything about a ticket in one call: metadata, every email with its real body, internal notes, and an attachment index. Prefer this over get_ticket + get_thread when you need to understand a ticket. Accepts a ticket ID or any Zoho Desk URL.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ticketId: { type: "string", description: "Ticket ID or full Zoho Desk URL" },
+          includeQuoted: {
+            type: "boolean",
+            description: "Include the quoted reply chain in each message (default false — quoted history is stripped since it repeats earlier messages verbatim)",
+          },
+        },
+        required: ["ticketId"],
+      },
+    },
+    {
       name: "get_ticket",
-      description: "Fetch full details of a Zoho Desk ticket by ID or URL.",
+      description: "Fetch ticket metadata (status, contact, assignee) by ID or URL. Note: `description` is null on email tickets — use get_ticket_context for the actual conversation.",
       inputSchema: {
         type: "object",
         properties: {
@@ -68,13 +86,32 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: "get_thread",
-      description: "Fetch the full comment and email thread for a ticket in chronological order.",
+      description: "Fetch the full comment and email thread for a ticket in chronological order, with full message bodies and attachment metadata.",
       inputSchema: {
         type: "object",
         properties: {
-          ticketId: { type: "string", description: "Ticket ID" },
+          ticketId: { type: "string", description: "Ticket ID or full Zoho Desk URL" },
+          includeQuoted: {
+            type: "boolean",
+            description: "Include the quoted reply chain in each message (default false)",
+          },
         },
         required: ["ticketId"],
+      },
+    },
+    {
+      name: "get_attachment",
+      description:
+        "Read the contents of a ticket attachment. Text formats (.eml, .txt, .csv, .html, .json, .xml, .md, .log, .ics) are decoded; .eml files are parsed into headers plus body. Binary files are reported as unreadable. Get the IDs from get_ticket_context or get_thread.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ticketId: { type: "string", description: "Ticket ID or full Zoho Desk URL" },
+          threadId: { type: "string", description: "ID of the thread entry the attachment belongs to" },
+          attachmentId: { type: "string", description: "Attachment ID" },
+          fileName: { type: "string", description: "Attachment filename — determines how the content is decoded" },
+        },
+        required: ["ticketId", "threadId", "attachmentId"],
       },
     },
     {
@@ -152,8 +189,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "get_contact":
         result = await getContact(a.contactId as string);
         break;
+      case "get_ticket_context":
+        result = await getTicketContext(a.ticketId as string, {
+          includeQuoted: a.includeQuoted as boolean | undefined,
+        });
+        break;
       case "get_thread":
-        result = await getThread(a.ticketId as string);
+        result = await getThread(a.ticketId as string, {
+          includeQuoted: a.includeQuoted as boolean | undefined,
+        });
+        break;
+      case "get_attachment":
+        result = await getAttachment({
+          ticketId: a.ticketId as string,
+          threadId: a.threadId as string,
+          attachmentId: a.attachmentId as string,
+          fileName: a.fileName as string | undefined,
+        });
         break;
       case "create_internal_note":
         result = await createInternalNote(a.ticketId as string, a.content as string);

@@ -1,13 +1,14 @@
 {
   "name": "zoho-desk-mcp",
   "version": "1.0.0",
-  "description": "MCP server for Zoho Desk — read tickets, contacts, threads; create internal notes and draft replies",
+  "description": "MCP server for Zoho Desk \u2014 read tickets, contacts, threads; create internal notes and draft replies",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

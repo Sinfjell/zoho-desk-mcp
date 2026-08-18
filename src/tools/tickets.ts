@@ -1,6 +1,6 @@
 import { get } from "../client.js";
 import { ZohoValidationError } from "../client.js";
-import { htmlToText } from "../utils.js";
+import { htmlToText, parseTicketId } from "../utils.js";
 
 interface ZohoTicket {
   id: string;
@@ -10,13 +10,18 @@ interface ZohoTicket {
   status: string;
   priority: string;
   contactId: string;
-  contact?: { firstName?: string; lastName?: string; email?: string };
   departmentId: string;
   assigneeId?: string;
   assignee?: { firstName?: string; lastName?: string };
   createdTime: string;
   modifiedTime: string;
   webUrl: string;
+  channel?: string;
+  language?: string;
+  threadCount?: string;
+  commentCount?: string;
+  contact?: { firstName?: string; lastName?: string; email?: string; account?: { accountName?: string } };
+  department?: { name?: string };
   cf?: Record<string, unknown>;
 }
 
@@ -25,14 +30,7 @@ interface ZohoTicketList {
   count: number;
 }
 
-function parseTicketId(input: string): string {
-  // Accept numeric ID or full Zoho Desk URL
-  const urlMatch = input.match(/\/tickets\/(\d+)/);
-  if (urlMatch) return urlMatch[1];
-  return input.trim();
-}
-
-function formatTicket(t: ZohoTicket) {
+export function formatTicket(t: ZohoTicket) {
   const contactName = [t.contact?.firstName, t.contact?.lastName].filter(Boolean).join(" ") || "Unknown";
   const assigneeName = t.assignee
     ? [t.assignee.firstName, t.assignee.lastName].filter(Boolean).join(" ")
@@ -47,7 +45,15 @@ function formatTicket(t: ZohoTicket) {
     contactId: t.contactId,
     contactName,
     contactEmail: t.contact?.email ?? null,
+    accountName: t.contact?.account?.accountName ?? null,
     departmentId: t.departmentId,
+    departmentName: t.department?.name ?? null,
+    channel: t.channel ?? null,
+    language: t.language ?? null,
+    // Zoho leaves `description` null on email tickets — the opening message is
+    // the first thread, so use get_thread / get_ticket_context for the body.
+    threadCount: Number(t.threadCount ?? 0),
+    commentCount: Number(t.commentCount ?? 0),
     assigneeId: t.assigneeId ?? null,
     assigneeName: assigneeName ?? null,
     createdTime: t.createdTime,
@@ -58,7 +64,7 @@ function formatTicket(t: ZohoTicket) {
 
 export async function getTicket(ticketId: string) {
   const id = parseTicketId(ticketId);
-  const ticket = await get<ZohoTicket>(`/tickets/${id}`, { include: "contacts,assignee" });
+  const ticket = await get<ZohoTicket>(`/tickets/${id}`, { include: "contacts,assignee,departments" });
   return formatTicket(ticket);
 }
 

@@ -69,6 +69,44 @@ export async function get<T>(path: string, params?: Record<string, string | numb
   return zohoFetch<T>(url);
 }
 
+/** Download a raw (non-JSON) response body, e.g. attachment content. */
+export async function getRaw(path: string): Promise<{ text: string; contentType: string | null }> {
+  const token = await getAccessToken();
+  const res = await fetch(`${BASE_URL}${path}`, {
+    headers: { "Authorization": `Zoho-oauthtoken ${token}`, "orgId": getOrgId() },
+  });
+
+  if (res.status === 404) throw new ZohoNotFoundError(`Not found: ${path}`);
+  if (res.status === 429) throw new ZohoRateLimitError("Rate limited by Zoho Desk.");
+  if (!res.ok) throw new ZohoApiError(`Zoho API error: HTTP ${res.status}`);
+
+  return { text: await res.text(), contentType: res.headers.get("content-type") };
+}
+
+/**
+ * Fetch every page of a list endpoint. Zoho caps `limit` at 99 and silently
+ * truncates otherwise, so long tickets need the loop. `complete` reports whether
+ * the page cap was hit — callers must surface that rather than pass off a
+ * partial list as the whole conversation.
+ */
+export async function getAll<T>(
+  path: string,
+  params: Record<string, string | number | undefined> = {},
+  maxPages = 100
+): Promise<{ items: T[]; complete: boolean }> {
+  const limit = 99;
+  const items: T[] = [];
+
+  for (let page = 0; page < maxPages; page++) {
+    const res = await get<{ data?: T[] }>(path, { ...params, from: page * limit + 1, limit });
+    const batch = res.data ?? [];
+    items.push(...batch);
+    if (batch.length < limit) return { items, complete: true };
+  }
+
+  return { items, complete: false };
+}
+
 export async function post<T>(path: string, body: unknown): Promise<T> {
   return zohoFetch<T>(path, {
     method: "POST",
